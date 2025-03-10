@@ -1,54 +1,40 @@
 {
-  inputs = {
-    nixpkgs.url = "github:cachix/devenv-nixpkgs/rolling";
-    systems.url = "github:nix-systems/default";
-    devenv.url = "github:cachix/devenv";
-    devenv.inputs.nixpkgs.follows = "nixpkgs";
-  };
+  description = "A Nix-flake-based Go 1.24 development environment";
 
-  nixConfig = {
-    extra-trusted-public-keys = "devenv.cachix.org-1:w1cLUi8dv3hnoSPGAuibQv+f9TZLr6cv/Hm9XgU50cw=";
-    extra-substituters = "https://devenv.cachix.org";
-  };
+  inputs.nixpkgs.url = "https://flakehub.com/f/NixOS/nixpkgs/0.1.*.tar.gz";
 
-  outputs = { self, nixpkgs, devenv, systems, ... } @ inputs:
+  outputs = { self, nixpkgs }:
     let
-      forEachSystem = nixpkgs.lib.genAttrs (import systems);
+      goVersion = 24; # Change this to update the whole stack
+
+      supportedSystems = [ "x86_64-linux" "aarch64-linux" "x86_64-darwin" "aarch64-darwin" ];
+      forEachSupportedSystem = f: nixpkgs.lib.genAttrs supportedSystems (system: f {
+        pkgs = import nixpkgs {
+          inherit system;
+          overlays = [ self.overlays.default ];
+        };
+      });
     in
     {
-      packages = forEachSystem (system: {
-        devenv-up = self.devShells.${system}.default.config.procfileScript;
-        devenv-test = self.devShells.${system}.default.config.test;
+      overlays.default = final: prev: {
+        go = final."go_1_${toString goVersion}";
+      };
+
+      devShells = forEachSupportedSystem ({ pkgs }: {
+        default = pkgs.mkShell {
+          packages = with pkgs; [
+            # go (version is specified by overlay)
+            go
+
+            # goimports, godoc, etc.
+            gotools
+
+            # https://github.com/golangci/golangci-lint
+            golangci-lint
+            golangci-lint-langserver
+            gopls
+          ];
+        };
       });
-
-      devShells = forEachSystem
-        (system:
-          let
-            pkgs = nixpkgs.legacyPackages.${system};
-          in
-          {
-            default = devenv.lib.mkShell {
-              inherit inputs pkgs;
-              modules = [
-                {
-                  # https://devenv.sh/reference/options/
-                  packages = with pkgs; [
-                    golangci-lint
-                    golangci-lint-langserver
-                    gopls
-                    gotools
-                  ];
-
-                  languages.go.enable = true;
-
-                  # enterShell = ''
-                  #   hello
-                  # '';
-                  #
-                  # processes.hello.exec = "hello";
-                }
-              ];
-            };
-          });
     };
 }
