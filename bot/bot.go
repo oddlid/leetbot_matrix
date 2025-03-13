@@ -70,21 +70,22 @@ func (b *Bot) scheduleNTPCheck(ctx context.Context) error {
 		return ErrNoNTPServer
 	}
 	if b.cron == nil {
-		b.cron = cron.New()
+		b.cron = cron.New(cron.WithSeconds())
 	}
 
-	b.log().Debug().Msg("Adding cron job for NTP queries...")
+	llog := b.log().With().Str("ntp_server", b.cfg.NTPServer).Logger()
+	llog.Debug().Msg("Adding cron job for NTP queries...")
 	_, err := b.cron.AddFunc(
 		b.cfg.TimeFrame.Adjust(time.Now(), -2*time.Minute).AsCronSpec(),
 		func() {
-			b.log().Debug().Str("ntp_server", b.cfg.NTPServer).Msg("Querying NTP server...")
+			llog.Debug().Msg("Querying NTP server...")
 			offset, err := ltime.GetNTPOffSet(b.cfg.NTPServer)
 			if err != nil {
-				b.log().Error().Err(err).Str("ntp_server", b.cfg.NTPServer).Msg("Failed to query NTP server")
+				llog.Error().Err(err).Msg("Failed to query NTP server")
 				return
 			}
 			if err = b.send(ctx, fmt.Sprintf("NTP offset from %q: %+v", b.cfg.NTPServer, offset)); err != nil {
-				b.log().Error().Err(err).Msg("Failed to send NTP info to room")
+				llog.Error().Err(err).Msg("Failed to send NTP info to room")
 			}
 		},
 	)
@@ -193,6 +194,7 @@ func (b *Bot) Start(ctx context.Context) error {
 
 	b.log().Info().Msg("Initializing...")
 
+	// Find true address of server, in case of delegation.
 	cwk, err := mautrix.DiscoverClientAPI(ctx, b.cfg.Server)
 	if err != nil {
 		return err
@@ -269,6 +271,7 @@ func (b *Bot) Start(ctx context.Context) error {
 		b.log().Error().Err(err).Msg("Failed to schedule NTP check")
 	}
 
+	b.log().Info().Msg("Ready to rock!")
 	<-ctx.Done()
 	b.log().Info().Msg("Shutting down...")
 

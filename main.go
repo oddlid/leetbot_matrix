@@ -116,12 +116,14 @@ func app() *cli.App {
 			},
 			&cli.IntFlag{
 				Name:    optHour,
+				Aliases: []string{"H"},
 				Usage:   "The `hour` to trigger on",
 				Value:   defaultHour,
 				EnvVars: []string{envHour},
 			},
 			&cli.IntFlag{
 				Name:    optMinute,
+				Aliases: []string{"M"},
 				Usage:   "The `minute` to trigger on",
 				Value:   defaultMinute,
 				EnvVars: []string{envMinute},
