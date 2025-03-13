@@ -12,6 +12,10 @@
         pkgs = import nixpkgs {
           inherit system;
           overlays = [ self.overlays.default ];
+          config = {
+            allowUnfree = true;
+            # permittedInsecurePackages = [ "olm-3.2.16" ];
+          };
         };
       });
     in
@@ -22,6 +26,19 @@
 
       devShells = forEachSupportedSystem ({ pkgs }: {
         default = pkgs.mkShell {
+
+
+          # TODO: find out how to set this conditionally for only macOS before I'm done
+          LIBRARY_PATH = "/opt/homebrew/lib";
+          CPATH = "/opt/homebrew/include";
+          # shellHook = ''
+          #   # Hack for darwin, since I could not get libolm to build in nix on darwin. 
+          #   if [[ ${stdenv.hostPlatform.isDarwin} ]]; then 
+          #     export LIBRARY_PATH="/opt/homebrew/lib"
+          #     export CPATH="/opt/homebrew/include"
+          #   fi
+          # '';
+
           packages = with pkgs; [
             # go (version is specified by overlay)
             go
@@ -33,6 +50,11 @@
             golangci-lint
             golangci-lint-langserver
             gopls
+
+            pkg-config
+
+            # Needed for crypto
+            # olm
           ];
         };
       });

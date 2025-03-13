@@ -79,7 +79,7 @@ func app() *cli.App {
 				Email: "git@oddware.net",
 			},
 		},
-		Usage: "Run 1337 bot for Matrix",
+		Usage: "Run leet bot for Matrix",
 		Flags: []cli.Flag{
 			&cli.StringFlag{
 				Name:    optServer,
