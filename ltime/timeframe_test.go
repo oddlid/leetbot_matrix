@@ -27,7 +27,7 @@ func Test_TimeFrame_Adjust(t *testing.T) {
 
 func Test_TimeFrame_AsCronSpec(t *testing.T) {
 	t.Parallel()
-	assert.Equal(t, "13 37 * * *", TimeFrame{Hour: 13, Minute: 37}.AsCronSpec())
+	assert.Equal(t, "0 37 13 * * *", TimeFrame{Hour: 13, Minute: 37}.AsCronSpec())
 }
 
 func Test_TimeFrame_Code(t *testing.T) {
