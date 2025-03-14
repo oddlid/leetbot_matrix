@@ -28,16 +28,15 @@
         default = pkgs.mkShell {
 
 
-          # TODO: find out how to set this conditionally for only macOS before I'm done
-          LIBRARY_PATH = "/opt/homebrew/lib";
-          CPATH = "/opt/homebrew/include";
-          # shellHook = ''
-          #   # Hack for darwin, since I could not get libolm to build in nix on darwin. 
-          #   if [[ ${stdenv.hostPlatform.isDarwin} ]]; then 
-          #     export LIBRARY_PATH="/opt/homebrew/lib"
-          #     export CPATH="/opt/homebrew/include"
-          #   fi
-          # '';
+          # If linking with libolm on macOS, then installing libolm via homebrew and setting
+          # these two env vars is the only way I've gotten it to work. 
+          # LIBRARY_PATH = "/opt/homebrew/lib";
+          # CPATH = "/opt/homebrew/include";
+          # If using olm via nix, then there seems to be no binary version of olm for darwin aarch64,
+          # so it tries to build it from source. But the source is 9 years old and have constructs 
+          # that does not compile with CC from nix on darwin. 
+          # What I'm currently doing, is running "go [run|build] -tags goolm ...", which seems to work OK 
+          # this far, even if the devs of mautrix don't recommend goolm for production yet.
 
           packages = with pkgs; [
             # go (version is specified by overlay)
