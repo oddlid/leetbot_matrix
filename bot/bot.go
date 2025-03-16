@@ -11,6 +11,7 @@ import (
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
+	"github.com/oddlid/leetbot_matrix/leet"
 	"github.com/oddlid/leetbot_matrix/ltime"
 	"github.com/robfig/cron/v3"
 	"github.com/rs/zerolog"
@@ -33,18 +34,18 @@ var (
 )
 
 type BotConfig struct {
-	Username        string
-	Password        string
-	Server          string
-	DBPath          string
-	ScoreFile       string
-	BonusConfigFile string
-	NTPServer       string
-	TimeFrame       ltime.TimeFrame
+	Username   string
+	Password   string
+	Server     string
+	DBPath     string
+	ConfigFile string
+	NTPServer  string
+	TimeFrame  ltime.TimeFrame
 }
 type Bot struct {
 	client     *mautrix.Client
 	cron       *cron.Cron
+	leet       *leet.Leet
 	command    string
 	userID     string
 	lastRoomID id.RoomID
@@ -58,6 +59,7 @@ func New(cfg BotConfig, logger zerolog.Logger) *Bot {
 		command: fmt.Sprintf("!%d%d", cfg.TimeFrame.Hour, cfg.TimeFrame.Minute),
 		userID:  fmt.Sprintf("@%s:%s", cfg.Username, cfg.Server),
 		logger:  logger, // adjust later
+		leet:    leet.New(logger, cfg.ConfigFile, cfg.TimeFrame),
 	}
 }
 
@@ -74,26 +76,48 @@ func (b *Bot) scheduleNTPCheck(ctx context.Context) error {
 	}
 
 	llog := b.log().With().Str("ntp_server", b.cfg.NTPServer).Logger()
-	llog.Debug().Msg("Adding cron job for NTP queries...")
+	cronSpec := b.cfg.TimeFrame.Adjust(time.Now(), -2*time.Minute).AsCronSpec()
+	llog.Debug().Str("cron_spec", cronSpec).Msg("Adding cron job for NTP queries")
+
 	_, err := b.cron.AddFunc(
-		b.cfg.TimeFrame.Adjust(time.Now(), -2*time.Minute).AsCronSpec(),
+		cronSpec,
 		func() {
 			llog.Debug().Msg("Querying NTP server...")
 			offset, err := ltime.GetNTPOffSet(b.cfg.NTPServer)
 			if err != nil {
 				llog.Error().Err(err).Msg("Failed to query NTP server")
+				b.leet.SetNTPOffset(0)
 				return
 			}
+			b.leet.SetNTPOffset(offset)
 			if err = b.send(ctx, fmt.Sprintf("NTP offset from %q: %+v", b.cfg.NTPServer, offset)); err != nil {
 				llog.Error().Err(err).Msg("Failed to send NTP info to room")
 			}
 		},
 	)
-	if err != nil {
-		return err
+	return err
+}
+
+func (b *Bot) scheduleConfigSave() error {
+	if b.cron == nil {
+		b.cron = cron.New(cron.WithSeconds())
 	}
-	b.cron.Start()
-	return nil
+
+	llog := b.log().With().Str("config_file", b.cfg.ConfigFile).Logger()
+	cronSpec := b.cfg.TimeFrame.Adjust(time.Now(), 3*time.Minute).AsCronSpec()
+	llog.Debug().Str("cron_spec", cronSpec).Msg("Adding cron job for saving config")
+
+	_, err := b.cron.AddFunc(
+		cronSpec,
+		func() {
+			llog.Debug().Msg("Saving config file...")
+			if err := b.leet.SaveConfigFile(); err != nil {
+				llog.Error().Err(err).Msg("Failed to save config!")
+			}
+		},
+	)
+
+	return err
 }
 
 func (b *Bot) fromSelf(user string) bool {
@@ -124,22 +148,45 @@ func (b *Bot) send(ctx context.Context, msg string) error {
 }
 
 func (b *Bot) getStats(_ context.Context, w io.Writer) error {
-	_, err := fmt.Fprintf(w, "TODO: show stats")
-	return err
+	if b.leet.Active() {
+		fmt.Fprintf(w, "Calculation in progress, please try later")
+		return nil
+	}
+	fmt.Fprintf(w, "TODO: show stats")
+	return nil
 }
 
 func (b *Bot) reloadConfig(_ context.Context, w io.Writer) error {
-	_, err := fmt.Fprintf(w, "TODO: reload config")
+	if b.leet.Active() {
+		fmt.Fprintf(w, "Calculation in progress, please try later")
+		return nil
+	}
+
+	err := b.leet.LoadConfigFile()
+	if err != nil {
+		fmt.Fprintf(w, "Failed to reload config. Please check logs.")
+	} else {
+		fmt.Fprintf(w, "Config reloaded successfully.")
+	}
 	return err
 }
 
 func (b *Bot) play(_ context.Context, w io.Writer, ts time.Time, user string) error {
-	if err := ltime.FormatTimeStampFull(w, ts); err != nil {
-		return err
+	tc, _ := b.cfg.TimeFrame.Code(ts)
+	if !tc.InsideWindow() {
+		ltime.FormatTimeStampFull(w, ts)
+		fmt.Fprintf(
+			w,
+			" Check your watch, %s! I will only respond to this command between %s and %s.",
+			user,
+			b.cfg.TimeFrame.FormatWindowBefore(ts),
+			b.cfg.TimeFrame.FormatWindowAfter(ts),
+		)
+		return nil
 	}
-	if _, err := fmt.Fprintf(w, ": %s - TODO: spell et spell", user); err != nil {
-		return err
-	}
+
+	ltime.FormatTimeStampFull(w, ts)
+	fmt.Fprintf(w, ": %s - TODO: spell et spell", user)
 	return nil
 }
 
@@ -211,7 +258,7 @@ func (b *Bot) Start(ctx context.Context) error {
 	syncer := b.client.Syncer.(*mautrix.DefaultSyncer) // TODO: check cast
 
 	syncer.OnEventType(event.EventMessage, func(ctx context.Context, evt *event.Event) {
-		ts := time.Now() // save timestamp asap, before any other processing
+		ts := time.Now().Add(b.leet.GetNTPOffset()) // save timestamp asap, before any other processing
 		b.setRoom(evt.RoomID)
 		if err := b.dispatch(ctx, ts, evt.Sender.String(), evt.Content.AsMessage().Body); err != nil {
 			b.log().Error().Err(err).Msg("Dispatch failed")
@@ -267,8 +314,22 @@ func (b *Bot) Start(ctx context.Context) error {
 		}
 	}()
 
+	if err = b.leet.LoadConfigFile(); err != nil {
+		b.log().Error().Err(err).Msg("Failed to load config file!")
+	}
+
 	if err = b.scheduleNTPCheck(ctx); err != nil {
-		b.log().Error().Err(err).Msg("Failed to schedule NTP check")
+		b.log().Error().Err(err).Msg("Failed to schedule NTP check!")
+	}
+	if err = b.scheduleConfigSave(); err != nil {
+		b.log().Error().Err(err).Msg("Failed to schedule saving of config!")
+	}
+
+	if b.cron != nil {
+		b.cron.Start()
+		for _, e := range b.cron.Entries() {
+			b.log().Debug().Int("cron_entry_id", int(e.ID)).Time("next", e.Next).Msg("Cron entry")
+		}
 	}
 
 	b.log().Info().Msg("Ready to rock!")
@@ -276,12 +337,20 @@ func (b *Bot) Start(ctx context.Context) error {
 	b.log().Info().Msg("Shutting down...")
 
 	if b.cron != nil {
+		b.log().Debug().Msg("Stopping cron jobs...")
 		b.cron.Stop()
 	}
 
+	b.log().Debug().Msg("Closing Crypto Helper...")
 	if err = cryptoHelper.Close(); err != nil {
 		b.log().Error().Err(err).Msg("Failed to close cryptoHelper")
 	}
 
+	b.log().Debug().Msg("Saving config to file...")
+	if err = b.leet.SaveConfigFile(); err != nil {
+		b.log().Error().Err(err).Msg("Failed to save config, all changes in this session are now lost!")
+	}
+
+	b.log().Info().Msg("Done!")
 	return nil
 }

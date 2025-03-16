@@ -13,13 +13,12 @@ import (
 func botEntryPoint(cCtx *cli.Context) error {
 	l := zerolog.New(os.Stdout).With().Timestamp().Logger()
 	cfg := bot.BotConfig{
-		Username:        cCtx.String(optUser),
-		Password:        cCtx.String(optPass),
-		Server:          cCtx.String(optServer),
-		NTPServer:       cCtx.String(optNTPServer),
-		DBPath:          cCtx.Path(optDB),
-		ScoreFile:       cCtx.Path(optScoreFile),
-		BonusConfigFile: cCtx.Path(optBonusConfigFile),
+		Username:   cCtx.String(optUser),
+		Password:   cCtx.String(optPass),
+		Server:     cCtx.String(optServer),
+		NTPServer:  cCtx.String(optNTPServer),
+		DBPath:     cCtx.Path(optDB),
+		ConfigFile: cCtx.Path(optConfigFile),
 		TimeFrame: ltime.TimeFrame{
 			Hour:         uint8(cCtx.Int(optHour)),
 			Minute:       uint8(cCtx.Int(optMinute)),

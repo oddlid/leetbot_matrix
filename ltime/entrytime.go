@@ -12,7 +12,7 @@ func (et *EntryTime) Update(tf TimeFrame, t time.Time) {
 		return
 	}
 
-	tc := tf.Code(t)
+	tc, offset := tf.Code(t)
 
 	// Don't update anything if outside time window
 	if !tc.InsideWindow() {
@@ -35,14 +35,15 @@ func (et *EntryTime) Update(tf TimeFrame, t time.Time) {
 
 	// If the previous best was set regardless because it was the first entry, it might
 	// be a near miss, and if so, we know that this entry is better without comparing more
-	if tf.Code(et.Best).NearMiss() {
+	tcBest, offsetBest := tf.Code(et.Best)
+	if tcBest.NearMiss() {
 		et.Best = t
 		return
 	}
 
 	// Now we know both the previous best and this entry is on time, so we must compare
 	// which is closest, and set the best
-	if tf.Distance(t) < tf.Distance(et.Best) {
+	if offset < offsetBest {
 		et.Best = t
 	}
 }

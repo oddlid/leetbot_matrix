@@ -13,37 +13,34 @@ import (
 )
 
 const (
-	logTimeStampLayout     = `2006-01-02T15:04:05.999-07:00`
-	appName                = `leetbot_matrix`
-	defaultHomeServer      = `oddware.net`
-	defaultUser            = `leetbot`
-	defaultDB              = `leetbot_matrix.db`
-	defaultScoreFile       = `/tmp/leetbot_scores.json`
-	defaultBonusConfigFile = `/tmp/leetbot_bonusconfigs.json`
-	defaultHour            = 13
-	defaultMinute          = 37
-	defaultNTPServer       = `0.se.pool.ntp.org`
-	envServer              = `M_HOMESERVER`
-	envUser                = `M_USER`
-	envPass                = `M_PASS`
-	envDB                  = `M_DB`
-	envLogLevel            = `L_LOGLEVEL`
-	envHour                = `L_HOUR`
-	envMinute              = `L_MINUTE`
-	envScoreFile           = `L_SCOREFILE`
-	envBonusConfigFile     = `L_BONUSCONFIGFILE`
-	envNTPServer           = `L_NTP_SERVER`
-	optServer              = `server`
-	optRoom                = `room` // can we use this, or must the bot be invited always?
-	optUser                = `user`
-	optPass                = `pass`
-	optDB                  = `db`
-	optLogLevel            = `log-level`
-	optHour                = `hour`
-	optMinute              = `minute`
-	optScoreFile           = `score-file`
-	optBonusConfigFile     = `bonus-config-file`
-	optNTPServer           = `ntp-server`
+	logTimeStampLayout = `2006-01-02T15:04:05.999-07:00`
+	appName            = `leetbot_matrix`
+	defaultHomeServer  = `oddware.net`
+	defaultUser        = `leetbot`
+	defaultDB          = `leetbot_matrix.db`
+	defaultConfigFile  = `/tmp/leetbot_config.json`
+	defaultHour        = 13
+	defaultMinute      = 37
+	defaultNTPServer   = `0.se.pool.ntp.org`
+	envServer          = `M_HOMESERVER`
+	envUser            = `M_USER`
+	envPass            = `M_PASS`
+	envDB              = `M_DB`
+	envLogLevel        = `L_LOGLEVEL`
+	envHour            = `L_HOUR`
+	envMinute          = `L_MINUTE`
+	envConfigFile      = `L_CONFIGFILE`
+	envNTPServer       = `L_NTP_SERVER`
+	optServer          = `server`
+	optRoom            = `room` // can we use this, or must the bot be invited always?
+	optUser            = `user`
+	optPass            = `pass`
+	optDB              = `db`
+	optLogLevel        = `log-level`
+	optHour            = `hour`
+	optMinute          = `minute`
+	optConfigFile      = `config`
+	optNTPServer       = `ntp-server`
 )
 
 var (
@@ -103,6 +100,7 @@ func app() *cli.App {
 			},
 			&cli.PathFlag{
 				Name:    optDB,
+				Aliases: []string{"D"},
 				Usage:   "SQLite database `path`",
 				Value:   defaultDB,
 				EnvVars: []string{envDB},
@@ -129,18 +127,11 @@ func app() *cli.App {
 				EnvVars: []string{envMinute},
 			},
 			&cli.PathFlag{
-				Name:    optScoreFile,
-				Aliases: []string{"f"},
-				Usage:   "Score file `path`",
-				Value:   defaultScoreFile,
-				EnvVars: []string{envScoreFile},
-			},
-			&cli.PathFlag{
-				Name:    optBonusConfigFile,
-				Aliases: []string{"b"},
-				Usage:   "Bonus config file `path`",
-				Value:   defaultBonusConfigFile,
-				EnvVars: []string{envBonusConfigFile},
+				Name:    optConfigFile,
+				Aliases: []string{"c"},
+				Usage:   "Config file `path`",
+				Value:   defaultConfigFile,
+				EnvVars: []string{envConfigFile},
 			},
 			&cli.StringFlag{
 				Name:    optNTPServer,

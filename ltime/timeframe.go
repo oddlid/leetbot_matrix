@@ -32,42 +32,23 @@ func (tf TimeFrame) Adjust(t time.Time, adjust time.Duration) TimeFrame {
 	}
 }
 
+func (tf TimeFrame) FormatWindowBefore(t time.Time) string {
+	wb := tf.Adjust(t, -tf.WindowBefore)
+	return time.Date(0, 0, 0, int(wb.Hour), int(wb.Minute), 0, 0, time.Local).Format("15:04")
+}
+
+func (tf TimeFrame) FormatWindowAfter(t time.Time) string {
+	wa := tf.Adjust(t, tf.WindowAfter)
+	return time.Date(0, 0, 0, int(wa.Hour), int(wa.Minute), 0, 0, time.Local).Format("15:04")
+}
+
 func (tf TimeFrame) AsCronSpec() string {
 	return fmt.Sprintf("0 %d %d * * *", tf.Minute, tf.Hour)
 }
 
-func (tf TimeFrame) Code(t time.Time) TimeCode {
-	switch h := uint8(t.Hour()); {
-	case h < tf.Hour:
-		return TCBefore
-	case h > tf.Hour:
-		return TCAfter
-	}
-
-	switch m := uint8(t.Minute()); {
-	case m < uint8(tf.Minute)-uint8(tf.WindowBefore.Minutes()):
-		return TCBefore
-	case m > uint8(tf.Minute)+uint8(tf.WindowAfter.Minutes()):
-		return TCAfter
-	case m == uint8(tf.Minute)-uint8(tf.WindowBefore.Minutes()):
-		return TCEarly
-	case m == uint8(tf.Minute)+uint8(tf.WindowAfter.Minutes()):
-		return TCLate
-	default:
-		return TCOnTime
-	}
-}
-
-// GetTargetScore returns how many points needed to win the game, depending on the TimeFrame
-// configuration.
-func (tf TimeFrame) GetTargetScore() int {
-	return int(tf.Hour)*100 + int(tf.Minute)
-}
-
-// Distance returns how far off the passed time is.
-// It does not indicate if the time is before or after, just how close.
-// Combine with TimeFrame.Code to get if it's before or after.
-func (tf TimeFrame) Distance(actual time.Time) time.Duration {
+// Code returns a TimeCode indicating if the actual time is before or after the target time,
+// and the distance to the target time as a time.Duration
+func (tf TimeFrame) Code(actual time.Time) (TimeCode, time.Duration) {
 	target := time.Date(
 		actual.Year(),
 		actual.Month(),
@@ -78,8 +59,33 @@ func (tf TimeFrame) Distance(actual time.Time) time.Duration {
 		0, // -- || --
 		actual.Location(),
 	)
-	if actual.After(target) {
-		return actual.Sub(target)
+
+	isBefore := actual.Before(target)
+
+	distance := target.Sub(actual)
+	if !isBefore {
+		distance = actual.Sub(target)
 	}
-	return target.Sub(actual)
+
+	if isBefore {
+		if distance > tf.WindowBefore {
+			return TCBefore, distance
+		}
+		return TCEarly, distance
+	}
+
+	// after, or on time
+	if distance >= tf.WindowAfter*2 {
+		return TCAfter, distance
+	} else if distance >= tf.WindowAfter {
+		return TCLate, distance
+	}
+
+	return TCOnTime, distance
+}
+
+// GetTargetScore returns how many points needed to win the game, depending on the TimeFrame
+// configuration.
+func (tf TimeFrame) GetTargetScore() int {
+	return int(tf.Hour)*100 + int(tf.Minute)
 }

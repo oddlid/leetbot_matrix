@@ -1,6 +1,8 @@
 package leet
 
 import (
+	"sync/atomic"
+
 	"github.com/oddlid/leetbot_matrix/ltime"
 )
 
@@ -12,7 +14,7 @@ type User struct {
 	Missees ValueTracker    `json:"misses"`
 	Scores  ValueTracker    `json:"scores"` // imcompatible with old format
 	Done    bool            `json:"done"`   // true when user has reached the target score (was locked in the old format)
-	// locked  atomic.Bool     // temp lock for spamming in a round
+	locked  atomic.Bool     // temp lock for spamming in a round
 }
 
 // Might be useful, if done a lot

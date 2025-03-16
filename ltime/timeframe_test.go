@@ -41,25 +41,49 @@ func Test_TimeFrame_Code(t *testing.T) {
 	}
 
 	tm := time.Date(0, 0, 0, 12, 37, 0, 0, time.UTC)
-	assert.Equal(t, TCBefore, tf.Code(tm))
+	tc, offset := tf.Code(tm)
+	assert.Equal(t, TCBefore, tc)
+	assert.Equal(t, time.Hour, offset)
 
 	tm = time.Date(0, 0, 0, 14, 37, 0, 0, time.UTC)
-	assert.Equal(t, TCAfter, tf.Code(tm))
+	tc, offset = tf.Code(tm)
+	assert.Equal(t, TCAfter, tc)
+	assert.Equal(t, time.Hour, offset)
 
 	tm = time.Date(0, 0, 0, 13, 35, 0, 0, time.UTC)
-	assert.Equal(t, TCBefore, tf.Code(tm))
+	tc, offset = tf.Code(tm)
+	assert.Equal(t, TCBefore, tc)
+	assert.Equal(t, 2*time.Minute, offset)
 
 	tm = time.Date(0, 0, 0, 13, 39, 0, 0, time.UTC)
-	assert.Equal(t, TCAfter, tf.Code(tm))
+	tc, offset = tf.Code(tm)
+	assert.Equal(t, TCAfter, tc)
+	assert.Equal(t, 2*time.Minute, offset)
 
 	tm = time.Date(0, 0, 0, 13, 36, 0, 0, time.UTC)
-	assert.Equal(t, TCEarly, tf.Code(tm))
+	tc, offset = tf.Code(tm)
+	assert.Equal(t, TCEarly, tc)
+	assert.Equal(t, time.Minute, offset)
+
+	tm = time.Date(0, 0, 0, 13, 36, 59, 0, time.UTC)
+	tc, offset = tf.Code(tm)
+	assert.Equal(t, TCEarly, tc)
+	assert.Equal(t, time.Second, offset)
 
 	tm = time.Date(0, 0, 0, 13, 38, 0, 0, time.UTC)
-	assert.Equal(t, TCLate, tf.Code(tm))
+	tc, offset = tf.Code(tm)
+	assert.Equal(t, TCLate, tc)
+	assert.Equal(t, time.Minute, offset)
 
 	tm = time.Date(0, 0, 0, 13, 37, 0, 0, time.UTC)
-	assert.Equal(t, TCOnTime, tf.Code(tm))
+	tc, offset = tf.Code(tm)
+	assert.Equal(t, TCOnTime, tc)
+	assert.Equal(t, time.Duration(0), offset)
+
+	tm = time.Date(0, 0, 0, 13, 37, 59, 0, time.UTC)
+	tc, offset = tf.Code(tm)
+	assert.Equal(t, TCOnTime, tc)
+	assert.Equal(t, 59*time.Second, offset)
 }
 
 func Test_TimeFrame_GetTargetScore(t *testing.T) {
@@ -68,21 +92,4 @@ func Test_TimeFrame_GetTargetScore(t *testing.T) {
 	assert.Equal(t, 1337, TimeFrame{Hour: 13, Minute: 37}.GetTargetScore())
 	assert.Equal(t, 1214, TimeFrame{Hour: 12, Minute: 14}.GetTargetScore())
 	assert.Equal(t, 214, TimeFrame{Hour: 2, Minute: 14}.GetTargetScore())
-}
-
-func Test_TimeFrame_Distance(t *testing.T) {
-	t.Parallel()
-
-	tf := TimeFrame{
-		Hour:         13,
-		Minute:       37,
-		WindowBefore: time.Minute,
-		WindowAfter:  time.Minute,
-	}
-
-	tm := time.Date(0, 0, 0, 13, 37, 10, 0, time.UTC)
-	assert.Equal(t, 10*time.Second, tf.Distance(tm))
-
-	tm = time.Date(0, 0, 0, 13, 36, 40, 0, time.UTC)
-	assert.Equal(t, 20*time.Second, tf.Distance(tm))
 }
