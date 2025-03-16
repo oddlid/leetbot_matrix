@@ -172,8 +172,8 @@ func (b *Bot) reloadConfig(_ context.Context, w io.Writer) error {
 }
 
 func (b *Bot) play(_ context.Context, w io.Writer, ts time.Time, user string) error {
-	tc, _ := b.cfg.TimeFrame.Code(ts)
-	if !tc.InsideWindow() {
+	res := b.cfg.TimeFrame.Code(ts)
+	if !res.Code.InsideWindow() {
 		ltime.FormatTimeStampFull(w, ts)
 		fmt.Fprintf(
 			w,

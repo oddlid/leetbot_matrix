@@ -12,6 +12,13 @@ type TimeFrame struct {
 	WindowAfter  time.Duration
 }
 
+type TimeFrameResult struct {
+	TF     TimeFrame     // The TimeFrame this result was derived from
+	TS     time.Time     // The timestamp used to derive this result
+	Code   TimeCode      // Distance and direction indicator
+	Offset time.Duration // Offset from target time
+}
+
 func (tf TimeFrame) Adjust(t time.Time, adjust time.Duration) TimeFrame {
 	then := time.Date(
 		t.Year(),
@@ -46,9 +53,9 @@ func (tf TimeFrame) AsCronSpec() string {
 	return fmt.Sprintf("0 %d %d * * *", tf.Minute, tf.Hour)
 }
 
-// Code returns a TimeCode indicating if the actual time is before or after the target time,
-// and the distance to the target time as a time.Duration
-func (tf TimeFrame) Code(actual time.Time) (TimeCode, time.Duration) {
+// Code returns a TimeFrameResult indicating if the actual time is before or after the target time,
+// and the distance to the target time
+func (tf TimeFrame) Code(actual time.Time) TimeFrameResult {
 	target := time.Date(
 		actual.Year(),
 		actual.Month(),
@@ -67,21 +74,27 @@ func (tf TimeFrame) Code(actual time.Time) (TimeCode, time.Duration) {
 		distance = actual.Sub(target)
 	}
 
+	result := TimeFrameResult{
+		TF:     tf,
+		TS:     actual,
+		Offset: distance,
+	}
+
 	if isBefore {
 		if distance > tf.WindowBefore {
-			return TCBefore, distance
+			result.Code = TCBefore
+		} else {
+			result.Code = TCEarly
 		}
-		return TCEarly, distance
-	}
-
-	// after, or on time
-	if distance >= tf.WindowAfter*2 {
-		return TCAfter, distance
+	} else if distance >= tf.WindowAfter*2 {
+		result.Code = TCAfter
 	} else if distance >= tf.WindowAfter {
-		return TCLate, distance
+		result.Code = TCLate
+	} else {
+		result.Code = TCOnTime
 	}
 
-	return TCOnTime, distance
+	return result
 }
 
 // GetTargetScore returns how many points needed to win the game, depending on the TimeFrame
