@@ -32,7 +32,7 @@ const (
 	envConfigFile      = `L_CONFIGFILE`
 	envNTPServer       = `L_NTP_SERVER`
 	optServer          = `server`
-	optRoom            = `room` // can we use this, or must the bot be invited always?
+	optRoom            = `room`
 	optUser            = `user`
 	optPass            = `pass`
 	optDB              = `db`
@@ -84,6 +84,11 @@ func app() *cli.App {
 				Usage:   "Matrix homeserver `address` to connect to",
 				Value:   defaultHomeServer,
 				EnvVars: []string{envServer},
+			},
+			&cli.StringFlag{
+				Name:    optRoom,
+				Aliases: []string{"r"},
+				Usage:   "Which `room` to try to join",
 			},
 			&cli.StringFlag{
 				Name:    optUser,

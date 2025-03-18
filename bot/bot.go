@@ -37,20 +37,20 @@ type BotConfig struct {
 	Username   string
 	Password   string
 	Server     string
+	Room       string
 	DBPath     string
 	ConfigFile string
 	NTPServer  string
 	TimeFrame  ltime.TimeFrame
 }
 type Bot struct {
-	client     *mautrix.Client
-	cron       *cron.Cron
-	leet       *leet.Leet
-	command    string
-	userID     string
-	lastRoomID id.RoomID
-	cfg        BotConfig
-	logger     zerolog.Logger
+	client  *mautrix.Client
+	cron    *cron.Cron
+	leet    *leet.Leet
+	command string
+	userID  string
+	cfg     BotConfig
+	logger  zerolog.Logger
 }
 
 func New(cfg BotConfig, logger zerolog.Logger) *Bot {
@@ -59,7 +59,7 @@ func New(cfg BotConfig, logger zerolog.Logger) *Bot {
 		command: fmt.Sprintf("!%d%d", cfg.TimeFrame.Hour, cfg.TimeFrame.Minute),
 		userID:  fmt.Sprintf("@%s:%s", cfg.Username, cfg.Server),
 		logger:  logger, // adjust later
-		leet:    leet.New(logger, cfg.ConfigFile, cfg.TimeFrame),
+		leet:    leet.New(logger, cfg.ConfigFile, cfg.Room, cfg.TimeFrame),
 	}
 }
 
@@ -82,6 +82,7 @@ func (b *Bot) scheduleNTPCheck(ctx context.Context) error {
 	_, err := b.cron.AddFunc(
 		cronSpec,
 		func() {
+			now := time.Now()
 			llog.Debug().Msg("Querying NTP server...")
 			offset, err := ltime.GetNTPOffSet(b.cfg.NTPServer)
 			if err != nil {
@@ -90,7 +91,10 @@ func (b *Bot) scheduleNTPCheck(ctx context.Context) error {
 				return
 			}
 			b.leet.SetNTPOffset(offset)
-			if err = b.send(ctx, fmt.Sprintf("NTP offset from %q: %+v", b.cfg.NTPServer, offset)); err != nil {
+			var buf strings.Builder
+			ltime.FormatTimeStampFull(&buf, now)
+			fmt.Fprintf(&buf, ": NTP offset from %q: %+v", b.cfg.NTPServer, offset)
+			if err = b.send(ctx, buf.String()); err != nil {
 				llog.Error().Err(err).Msg("Failed to send NTP info to room")
 			}
 		},
@@ -131,11 +135,17 @@ func (b *Bot) setRoom(roomID id.RoomID) {
 	if b == nil {
 		return
 	}
-	b.lastRoomID = roomID
+	if err := b.leet.SetRoom(roomID.String()); err != nil {
+		b.log().Error().Err(err).Str("room_id", roomID.String()).Msg("Failed to update room ID")
+	}
 }
 
 func (b *Bot) send(ctx context.Context, msg string) error {
-	if b.lastRoomID == "" {
+	room, err := b.leet.GetRoom()
+	if err != nil {
+		return err
+	}
+	if room == "" {
 		return ErrNoRoomID
 	}
 
@@ -143,7 +153,7 @@ func (b *Bot) send(ctx context.Context, msg string) error {
 		return ErrNilClient
 	}
 
-	_, err := b.client.SendText(ctx, b.lastRoomID, msg)
+	_, err = b.client.SendText(ctx, id.RoomID(room), msg)
 	return err
 }
 
@@ -152,7 +162,7 @@ func (b *Bot) getStats(_ context.Context, w io.Writer) error {
 		fmt.Fprintf(w, "Calculation in progress, please try later")
 		return nil
 	}
-	fmt.Fprintf(w, "TODO: show stats")
+	b.leet.Stats(w)
 	return nil
 }
 
@@ -171,23 +181,21 @@ func (b *Bot) reloadConfig(_ context.Context, w io.Writer) error {
 	return err
 }
 
-func (b *Bot) play(_ context.Context, w io.Writer, ts time.Time, user string) error {
-	res := b.cfg.TimeFrame.Code(ts)
-	if !res.Code.InsideWindow() {
-		ltime.FormatTimeStampFull(w, ts)
+func (b *Bot) play(ctx context.Context, w io.Writer, ts time.Time, user string) error {
+	tfr := b.cfg.TimeFrame.Code(ts)
+	if !tfr.Code.InsideWindow() {
+		ltime.FormatTimeStampFull(w, tfr.TS)
 		fmt.Fprintf(
 			w,
-			" Check your watch, %s! I will only respond to this command between %s and %s.",
+			": Check your time, %s! I will only respond to this command between %s and %s.",
 			user,
-			b.cfg.TimeFrame.FormatWindowBefore(ts),
-			b.cfg.TimeFrame.FormatWindowAfter(ts),
+			tfr.TF.FormatWindowBefore(tfr.TS),
+			tfr.TF.FormatWindowAfter(tfr.TS),
 		)
 		return nil
 	}
 
-	ltime.FormatTimeStampFull(w, ts)
-	fmt.Fprintf(w, ": %s - TODO: spell et spell", user)
-	return nil
+	return b.leet.Play(ctx, w, user, tfr)
 }
 
 func (b *Bot) dispatch(ctx context.Context, ts time.Time, user, cmd string) error {
@@ -259,6 +267,7 @@ func (b *Bot) Start(ctx context.Context) error {
 
 	syncer.OnEventType(event.EventMessage, func(ctx context.Context, evt *event.Event) {
 		ts := time.Now().Add(b.leet.GetNTPOffset()) // save timestamp asap, before any other processing
+		// b.log().Debug().Str("room_id", evt.RoomID.String()).Msg("Message in room")
 		b.setRoom(evt.RoomID)
 		if err := b.dispatch(ctx, ts, evt.Sender.String(), evt.Content.AsMessage().Body); err != nil {
 			b.log().Error().Err(err).Msg("Dispatch failed")

@@ -24,3 +24,7 @@ type User struct {
 // 	}
 // 	u.locked.Swap(val)
 // }
+
+// func (u *User) timeSpentPlaying(start time.Time) time.Duration {
+// 	return u.Entries.Last.Sub(start)
+// }

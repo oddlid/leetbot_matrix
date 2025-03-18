@@ -75,6 +75,11 @@ func Test_TimeFrame_Code(t *testing.T) {
 	assert.Equal(t, TCLate, res.Code)
 	assert.Equal(t, time.Minute, res.Offset)
 
+	tm = time.Date(0, 0, 0, 13, 38, 59, 0, time.UTC)
+	res = tf.Code(tm)
+	assert.Equal(t, TCLate, res.Code)
+	assert.Equal(t, 119*time.Second, res.Offset)
+
 	tm = time.Date(0, 0, 0, 13, 37, 0, 0, time.UTC)
 	res = tf.Code(tm)
 	assert.Equal(t, TCOnTime, res.Code)
