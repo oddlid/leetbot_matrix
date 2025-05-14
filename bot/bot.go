@@ -13,6 +13,7 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/oddlid/leetbot_matrix/leet"
 	"github.com/oddlid/leetbot_matrix/ltime"
+	"github.com/oddlid/leetbot_matrix/util"
 	"github.com/robfig/cron/v3"
 	"github.com/rs/zerolog"
 	"maunium.net/go/mautrix"
@@ -30,7 +31,6 @@ var (
 	ErrNilClient   = errors.New("client is nil")
 	ErrNilReceiver = errors.New("receiver is nil")
 	ErrNoRoomID    = errors.New("no room ID set")
-	ErrNoNTPServer = errors.New("no NTP server specified")
 )
 
 type BotConfig struct {
@@ -40,7 +40,6 @@ type BotConfig struct {
 	Room       string
 	DBPath     string
 	ConfigFile string
-	NTPServer  string
 	TimeFrame  ltime.TimeFrame
 }
 type Bot struct {
@@ -65,41 +64,6 @@ func New(cfg BotConfig, logger zerolog.Logger) *Bot {
 
 func (b *Bot) log() *zerolog.Logger {
 	return &b.logger
-}
-
-func (b *Bot) scheduleNTPCheck(ctx context.Context) error {
-	if b.cfg.NTPServer == "" {
-		return ErrNoNTPServer
-	}
-	if b.cron == nil {
-		b.cron = cron.New(cron.WithSeconds())
-	}
-
-	llog := b.log().With().Str("ntp_server", b.cfg.NTPServer).Logger()
-	cronSpec := b.cfg.TimeFrame.Adjust(time.Now(), -2*time.Minute).AsCronSpec()
-	llog.Debug().Str("cron_spec", cronSpec).Msg("Adding cron job for NTP queries")
-
-	_, err := b.cron.AddFunc(
-		cronSpec,
-		func() {
-			now := time.Now()
-			llog.Debug().Msg("Querying NTP server...")
-			offset, err := ltime.GetNTPOffSet(b.cfg.NTPServer)
-			if err != nil {
-				llog.Error().Err(err).Msg("Failed to query NTP server")
-				b.leet.SetNTPOffset(0)
-				return
-			}
-			b.leet.SetNTPOffset(offset)
-			var buf strings.Builder
-			ltime.FormatTimeStampFull(&buf, now)
-			fmt.Fprintf(&buf, ": NTP offset from %q: %+v", b.cfg.NTPServer, offset)
-			if err = b.send(ctx, buf.String()); err != nil {
-				llog.Error().Err(err).Msg("Failed to send NTP info to room")
-			}
-		},
-	)
-	return err
 }
 
 func (b *Bot) scheduleConfigSave() error {
@@ -159,24 +123,27 @@ func (b *Bot) send(ctx context.Context, msg string) error {
 
 func (b *Bot) getStats(_ context.Context, w io.Writer) error {
 	if b.leet.Active() {
-		fmt.Fprintf(w, "Calculation in progress, please try later")
-		return nil
+		if err := util.Fpf(w, "Calculation in progress, please try later"); err != nil {
+			return err
+		}
 	}
-	b.leet.Stats(w)
-	return nil
+	return b.leet.Stats(w)
 }
 
 func (b *Bot) reloadConfig(_ context.Context, w io.Writer) error {
 	if b.leet.Active() {
-		fmt.Fprintf(w, "Calculation in progress, please try later")
-		return nil
+		return util.Fpf(w, "Calculation in progress, please try later")
 	}
 
 	err := b.leet.LoadConfigFile()
 	if err != nil {
-		fmt.Fprintf(w, "Failed to reload config. Please check logs.")
+		if err := util.Fpf(w, "Failed to reload config. Please check logs."); err != nil {
+			return err
+		}
 	} else {
-		fmt.Fprintf(w, "Config reloaded successfully.")
+		if err := util.Fpf(w, "Config reloaded successfully."); err != nil {
+			return err
+		}
 	}
 	return err
 }
@@ -184,15 +151,16 @@ func (b *Bot) reloadConfig(_ context.Context, w io.Writer) error {
 func (b *Bot) play(ctx context.Context, w io.Writer, ts time.Time, user string) error {
 	tfr := b.cfg.TimeFrame.Code(ts)
 	if !tfr.Code.InsideWindow() {
-		ltime.FormatTimeStampFull(w, tfr.TS)
-		fmt.Fprintf(
+		if err := ltime.FormatTimeStampFull(w, tfr.TS); err != nil {
+			return err
+		}
+		return util.Fpf(
 			w,
 			": Check your time, %s! I will only respond to this command between %s and %s.",
 			user,
 			tfr.TF.FormatWindowBefore(tfr.TS),
 			tfr.TF.FormatWindowAfter(tfr.TS),
 		)
-		return nil
 	}
 
 	return b.leet.Play(ctx, w, user, tfr)
@@ -266,7 +234,7 @@ func (b *Bot) Start(ctx context.Context) error {
 	syncer := b.client.Syncer.(*mautrix.DefaultSyncer) // TODO: check cast
 
 	syncer.OnEventType(event.EventMessage, func(ctx context.Context, evt *event.Event) {
-		ts := time.Now().Add(b.leet.GetNTPOffset()) // save timestamp asap, before any other processing
+		ts := ltime.GetAdjustedTime(time.UnixMilli(evt.Timestamp), time.Now())
 		// b.log().Debug().Str("room_id", evt.RoomID.String()).Msg("Message in room")
 		b.setRoom(evt.RoomID)
 		if err := b.dispatch(ctx, ts, evt.Sender.String(), evt.Content.AsMessage().Body); err != nil {
@@ -327,9 +295,6 @@ func (b *Bot) Start(ctx context.Context) error {
 		b.log().Error().Err(err).Msg("Failed to load config file!")
 	}
 
-	if err = b.scheduleNTPCheck(ctx); err != nil {
-		b.log().Error().Err(err).Msg("Failed to schedule NTP check!")
-	}
 	if err = b.scheduleConfigSave(); err != nil {
 		b.log().Error().Err(err).Msg("Failed to schedule saving of config!")
 	}

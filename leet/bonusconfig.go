@@ -1,10 +1,11 @@
 package leet
 
 import (
-	"fmt"
 	"io"
 	"strconv"
 	"strings"
+
+	"github.com/oddlid/leetbot_matrix/util"
 )
 
 type BonusConfig struct {
@@ -26,8 +27,8 @@ type BonusReturn struct {
 
 type BonusReturns []BonusReturn
 
-func (br BonusReturn) printBonus(w io.Writer) {
-	fmt.Fprintf(w, "[%s=%d]: %s", br.Match, br.Points, br.Msg)
+func (br BonusReturn) printBonus(w io.Writer) error {
+	return util.Fpf(w, "[%s=%d]: %s", br.Match, br.Points, br.Msg)
 }
 
 func (brs BonusReturns) totalBonus() int {
@@ -38,14 +39,18 @@ func (brs BonusReturns) totalBonus() int {
 	return total
 }
 
-func (brs BonusReturns) printBonus(w io.Writer) {
-	fmt.Fprintf(w, "+%d points bonus! : ", brs.totalBonus())
+func (brs BonusReturns) printBonus(w io.Writer) error {
+	// nvm to return for every error, just return the last, if any
+	err := util.Fpf(w, "+%d points bonus! : ", brs.totalBonus())
 	for i, br := range brs {
 		if i > 0 {
-			fmt.Fprint(w, " + ")
+			if err = util.Fpf(w, " + "); err != nil {
+				break
+			}
 		}
-		br.printBonus(w)
+		err = br.printBonus(w)
 	}
+	return err
 }
 
 func hasHomogenicPrefix(ts string, prefix rune, matchPos int) bool {
@@ -122,12 +127,15 @@ func (bcs BonusConfigs) calc(ts string) BonusReturns {
 	return brs
 }
 
-func (bcs BonusConfigs) greetForPoints(w io.Writer, points int) {
+func (bcs BonusConfigs) greetForPoints(w io.Writer, points int) error {
 	for _, bc := range bcs {
 		if bc.SubVal == points {
-			fmt.Fprintf(w, " - %s", bc.Greeting)
+			if err := util.Fpf(w, " - %s", bc.Greeting); err != nil {
+				return err
+			}
 		}
 	}
+	return nil
 }
 
 func (bcs BonusConfigs) hasValue(val int) (bool, BonusConfig) {

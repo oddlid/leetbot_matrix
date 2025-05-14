@@ -15,27 +15,11 @@ import (
 	"github.com/rs/zerolog"
 )
 
-type LeetConfig struct {
-	InspectionTax int  `json:"inspection_tax"`
-	OvershootTax  int  `json:"overshoot_tax"`
-	InspectAlways bool `json:"inspect_always"`
-	TaxLoners     bool `json:"tax_loners"`
-}
-
-type DB struct {
-	Room      string       `json:"room"`
-	BonusCfgs BonusConfigs `json:"bonus_configs"`
-	GameCfg   LeetConfig   `json:"game_config"`
-	Users     UserData     `json:"users"`
-	BotStart  time.Time    `json:"botstart"`
-}
-
 type Leet struct {
 	configFilePath string
 	db             DB
 	logger         zerolog.Logger
 	tf             ltime.TimeFrame
-	ntpOffset      atomic.Int64
 	active         atomic.Bool // true when between the time of first score giving entry and round calculation done
 }
 
@@ -56,31 +40,48 @@ func New(logger zerolog.Logger, configFilePath, room string, tf ltime.TimeFrame)
 	}
 }
 
+func (l *Leet) logErr(err error) {
+	if l == nil || err == nil {
+		return
+	}
+	l.logger.Error().Err(err).Send()
+}
+
+func (l *Leet) logErrFn(f func() error) {
+	l.logErr(f())
+}
+
 func (l *Leet) Play(_ context.Context, w io.Writer, userName string, tfr ltime.TimeFrameResult) error {
 	if l == nil {
 		return ErrNilReceiver
 	}
 	// TODO:: make sure to restore this when the round is over and calculations are done
-	l.active.Store(true)
+	// l.active.Store(true)
 
 	user := l.db.Users.getUser(userName)
 	if user == nil {
 		return fmt.Errorf("no such user: %s", userName)
 	}
 
-	if user.Done {
-		l.handleFinishedPlayer(w, user, tfr.TS)
+	if l.handleFinishedPlayer(w, user, tfr.TS) {
+		return nil
+	}
+
+	if l.checkSpam(w, user, tfr.TS) {
 		return nil
 	}
 	// ...
 	return nil
 }
 
-func (l *Leet) handleFinishedPlayer(w io.Writer, user *User, ts time.Time) {
+func (l *Leet) handleFinishedPlayer(w io.Writer, user *User, ts time.Time) bool {
+	if !user.Done {
+		return false
+	}
 	// let the playser see the timestamp of posting, to make it extra annoying if it was a good time ;)
-	ltime.FormatTimeStampFull(w, ts)
+	l.logErr(ltime.FormatTimeStampFull(w, ts))
 	tDiff := ltime.Diff(l.db.BotStart, user.Entries.Last)
-	fmt.Fprintf(
+	l.logErr(util.Fpf(
 		w,
 		": %s - you're done, as you're #%d, reaching %d points @ %s after %d year(s), %d month(s), %d day(s)",
 		user.Name,
@@ -90,7 +91,17 @@ func (l *Leet) handleFinishedPlayer(w io.Writer, user *User, ts time.Time) {
 		tDiff.Year,
 		tDiff.Month,
 		tDiff.Day,
-	)
+	))
+	return true
+}
+
+func (l *Leet) checkSpam(w io.Writer, user *User, ts time.Time) bool {
+	if user.locked.Load() {
+		l.logErr(ltime.FormatTimeStampFull(w, ts))
+		l.logErr(util.Fpf(w, ": %s - Stop spamming!", user.Name))
+		return true
+	}
+	return false
 }
 
 func (l *Leet) SetRoom(id string) error {
@@ -109,25 +120,25 @@ func (l *Leet) GetRoom() (string, error) {
 	return l.db.Room, nil
 }
 
-func (l *Leet) Stats(w io.Writer) {
+func (l *Leet) Stats(w io.Writer) error {
 	if l == nil {
-		return
+		return ErrNilReceiver
 	}
 
-	greet := func(points int) {
+	greet := func(points int) error {
 		has, bc := l.db.BonusCfgs.hasValue(points)
 		if !has {
-			return
+			return nil
 		}
-		fmt.Fprintf(w, " - %s", bc.Greeting)
+		return util.Fpf(w, " - %s", bc.Greeting)
 	}
 
 	winners := l.db.Users.filterByDone(true).sortByLastEntryAsc()
-	win := func(u *User) {
+	win := func(u *User) error {
 		if !u.Done {
-			return
+			return nil
 		}
-		fmt.Fprintf(w, " - Winner #%d!", winners.getIndex(u.Name)+1)
+		return util.Fpf(w, " - Winner #%d!", winners.getIndex(u.Name)+1)
 	}
 
 	entryFormat := util.GetPadFormat(
@@ -135,10 +146,12 @@ func (l *Leet) Stats(w io.Writer) {
 		": %04d @ %s Best: %s Bonus: %03dx = %04d Tax: %03dx = -%04d Miss: -%04d",
 	)
 
-	fmt.Fprintf(w, "Stats since %s:\n", l.db.BotStart.Format(time.RFC3339))
+	if err := util.Fpf(w, "Stats since %s:\n", l.db.BotStart.Format(time.RFC3339)); err != nil {
+		return err
+	}
 
 	for _, u := range l.db.Users.toSlice().sortByPointsDesc() {
-		fmt.Fprintf(
+		if err := util.Fpf(
 			w,
 			entryFormat,
 			u.Name,
@@ -150,25 +163,21 @@ func (l *Leet) Stats(w io.Writer) {
 			u.Taxes.Times,
 			u.Taxes.Total,
 			u.Missees.Total,
-		)
-		win(u)
-		greet(u.Scores.Total)
-		fmt.Fprintf(w, "\n")
+		); err != nil {
+			return err
+		}
+		if err := win(u); err != nil {
+			return err
+		}
+		if err := greet(u.Scores.Total); err != nil {
+			return err
+		}
+		if err := util.Fpf(w, "\n"); err != nil {
+			return err
+		}
 	}
-}
 
-func (l *Leet) GetNTPOffset() time.Duration {
-	if l == nil {
-		return 0
-	}
-	return time.Duration(l.ntpOffset.Load())
-}
-
-func (l *Leet) SetNTPOffset(d time.Duration) {
-	if l == nil {
-		return
-	}
-	l.ntpOffset.Store(int64(d))
+	return nil
 }
 
 func (l *Leet) Active() bool {
@@ -197,7 +206,7 @@ func (l *Leet) LoadConfigFile() error {
 	if err != nil {
 		return err
 	}
-	defer file.Close()
+	defer l.logErrFn(file.Close)
 	return l.loadConfig(file)
 }
 
@@ -223,6 +232,6 @@ func (l *Leet) SaveConfigFile() error {
 	if err != nil {
 		return err
 	}
-	defer file.Close()
+	defer l.logErrFn(file.Close)
 	return l.saveConfig(file)
 }

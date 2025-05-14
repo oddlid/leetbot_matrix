@@ -1,5 +1,16 @@
 package main
 
+/*
+The intention when starting to write this, was to replicate my IRC `dvdgbot` 1337 module, for playing the same on Matrix.
+But after playing a bit around with it, it seems the whole concept is just not suited for Matrix, due to the whole
+"eventually consistent" thing, and since federation some times take ages, or fully stop for a while.
+When the game concept is to send a specific message as close to a specific timestamp as possible, rewarding the closest,
+and also to have the possibility of entry only open within a short time window (2 minutes), it all really falls flat when you
+can never know in time if there are still some messages not yet received from other servers.
+But, maybe I'll finish it anyways, and it will only be playable for users on the same server as the bot. Just as an exercise.
+We'll see, if I have time and nothing better to do.
+*/
+
 import (
 	"context"
 	"fmt"
@@ -8,6 +19,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/oddlid/leetbot_matrix/util"
 	"github.com/rs/zerolog"
 	"github.com/urfave/cli/v2"
 )
@@ -21,7 +33,6 @@ const (
 	defaultConfigFile  = `/tmp/leetbot_config.json`
 	defaultHour        = 13
 	defaultMinute      = 37
-	defaultNTPServer   = `0.se.pool.ntp.org`
 	envServer          = `M_HOMESERVER`
 	envUser            = `M_USER`
 	envPass            = `M_PASS`
@@ -30,7 +41,6 @@ const (
 	envHour            = `L_HOUR`
 	envMinute          = `L_MINUTE`
 	envConfigFile      = `L_CONFIGFILE`
-	envNTPServer       = `L_NTP_SERVER`
 	optServer          = `server`
 	optRoom            = `room`
 	optUser            = `user`
@@ -40,7 +50,6 @@ const (
 	optHour            = `hour`
 	optMinute          = `minute`
 	optConfigFile      = `config`
-	optNTPServer       = `ntp-server`
 )
 
 var (
@@ -138,13 +147,6 @@ func app() *cli.App {
 				Value:   defaultConfigFile,
 				EnvVars: []string{envConfigFile},
 			},
-			&cli.StringFlag{
-				Name:    optNTPServer,
-				Aliases: []string{"n"},
-				Usage:   "NTP server `address`",
-				Value:   defaultNTPServer,
-				EnvVars: []string{envNTPServer},
-			},
 		},
 		Before: func(ctx *cli.Context) error {
 			zerolog.TimeFieldFormat = logTimeStampLayout
@@ -167,6 +169,6 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
 	defer cancel()
 	if err := app().RunContext(ctx, os.Args); err != nil {
-		fmt.Fprintf(os.Stderr, "%s\n", err.Error())
+		_ = util.Fpf(os.Stderr, "%s\n", err.Error())
 	}
 }

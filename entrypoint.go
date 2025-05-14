@@ -17,7 +17,6 @@ func botEntryPoint(cCtx *cli.Context) error {
 		Password:   cCtx.String(optPass),
 		Server:     cCtx.String(optServer),
 		Room:       cCtx.String(optRoom),
-		NTPServer:  cCtx.String(optNTPServer),
 		DBPath:     cCtx.Path(optDB),
 		ConfigFile: cCtx.Path(optConfigFile),
 		TimeFrame: ltime.TimeFrame{
@@ -29,6 +28,5 @@ func botEntryPoint(cCtx *cli.Context) error {
 			WindowAfter:  time.Minute,
 		},
 	}
-	b := bot.New(cfg, l)
-	return b.Start(cCtx.Context)
+	return bot.New(cfg, l).Start(cCtx.Context)
 }
