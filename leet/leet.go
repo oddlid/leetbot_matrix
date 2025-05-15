@@ -81,17 +81,19 @@ func (l *Leet) handleFinishedPlayer(w io.Writer, user *User, ts time.Time) bool 
 	// let the playser see the timestamp of posting, to make it extra annoying if it was a good time ;)
 	l.logErr(ltime.FormatTimeStampFull(w, ts))
 	tDiff := ltime.Diff(l.db.BotStart, user.Entries.Last)
-	l.logErr(util.Fpf(
-		w,
-		": %s - you're done, as you're #%d, reaching %d points @ %s after %d year(s), %d month(s), %d day(s)",
-		user.Name,
-		l.db.Users.filterByDone(true).sortByLastEntryAsc().getIndex(user.Name)+1,
-		user.Scores.Total,
-		ltime.FormatLongDate(user.Entries.Last),
-		tDiff.Year,
-		tDiff.Month,
-		tDiff.Day,
-	))
+	l.logErr(
+		util.Fpf(
+			w,
+			": %s - you're done, as you're #%d, reaching %d points @ %s after %d year(s), %d month(s), %d day(s)",
+			user.Name,
+			l.db.Users.filterByDone(true).sortByLastEntryAsc().getIndex(user.Name)+1,
+			user.Scores.Total,
+			ltime.FormatLongDate(user.Entries.Last),
+			tDiff.Year,
+			tDiff.Month,
+			tDiff.Day,
+		),
+	)
 	return true
 }
 
